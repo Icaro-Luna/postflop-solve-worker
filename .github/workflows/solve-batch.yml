@@ -156,7 +156,13 @@ jobs:
         # o encadeamento continua. Cron do dispatch-shards.yml fica só como
         # rede de segurança (2026-07-30: cron sozinho atrasou >1h em produção,
         # não confiar nele como mecanismo principal).
-        if: always()
+        #
+        # SÓ o shard 0 chama isso (2026-07-30): com os 10 shards chamando
+        # independentemente, disparos ficavam a ~3min um do outro — gerações
+        # sobrepostas demais, aumentando colisão de arquivo entre shards de
+        # gerações diferentes (mitigado à parte, mas reduzir a frequência
+        # do gatilho já ataca a causa, não só o sintoma).
+        if: always() && inputs.shard_index == '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
