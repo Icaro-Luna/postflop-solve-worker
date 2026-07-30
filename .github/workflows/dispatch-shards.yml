@@ -1,0 +1,69 @@
+name: Dispatch shards
+
+on:
+  workflow_dispatch:
+    inputs:
+      data_repo:
+        default: "Icaro-Luna/rta"
+      shard_count:
+        default: "10"
+      batch_size:
+        default: "80"
+  schedule:
+    # A cada 5h — aprox. a duração de um job cheio (timeout 350min), evita
+    # disparar uma onda nova em cima de shards que ainda estão rodando.
+    - cron: "0 */5 * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checar quantos itens ainda faltam
+        id: pending
+        env:
+          GH_TOKEN: ${{ secrets.DATA_REPO_TOKEN }}
+          DATA_REPO: ${{ inputs.data_repo || 'Icaro-Luna/rta' }}
+        run: |
+          count=$(gh api "repos/${DATA_REPO}/contents/queue/pending" --paginate --jq 'length' 2>/dev/null | \
+            awk '{s+=$1} END {print s+0}')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Itens pendentes: $count"
+
+      - name: Checar shards já em execução
+        id: running
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          n=$(gh run list --repo ${{ github.repository }} --workflow=solve-batch.yml \
+                --status in_progress --json databaseId --jq 'length')
+          q=$(gh run list --repo ${{ github.repository }} --workflow=solve-batch.yml \
+                --status queued --json databaseId --jq 'length')
+          echo "running=$((n + q))" >> "$GITHUB_OUTPUT"
+          echo "Shards já ativos (running+queued): $((n + q))"
+
+      - name: Disparar shards que faltam
+        if: steps.pending.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHARD_COUNT: ${{ inputs.shard_count || '10' }}
+          BATCH_SIZE: ${{ inputs.batch_size || '80' }}
+          DATA_REPO: ${{ inputs.data_repo || 'Icaro-Luna/rta' }}
+          ALREADY_RUNNING: ${{ steps.running.outputs.running }}
+        run: |
+          echo "Fila tem ${{ steps.pending.outputs.count }} itens; ${ALREADY_RUNNING} shards já ativos."
+          if [ "$ALREADY_RUNNING" -ge "$SHARD_COUNT" ]; then
+            echo "Já tem shards suficientes rodando, não disparo mais."
+            exit 0
+          fi
+          to_start=$(( SHARD_COUNT - ALREADY_RUNNING ))
+          echo "Disparando $to_start shard(s) novo(s)."
+          for i in $(seq 0 $((to_start - 1))); do
+            gh workflow run solve-batch.yml --repo ${{ github.repository }} \
+              -f data_repo="$DATA_REPO" -f batch_size="$BATCH_SIZE" \
+              -f shard_index="$i" -f shard_count="$SHARD_COUNT"
+            sleep 3
+          done

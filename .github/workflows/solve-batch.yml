@@ -82,6 +82,23 @@ jobs:
           done
           echo "Este shard ($shard_index/$shard_count) vai processar ${#picked[@]} itens"
 
+          # Commit+push a cada item (não só no final): um job morto pelo
+          # timeout de 6h no meio do lote não pode perder tudo que já
+          # resolveu. Custo extra de git é desprezível perto de ~5min/solve.
+          push_with_retry() {
+            for attempt in 1 2 3 4 5; do
+              if git push origin HEAD:master 2>/tmp/push_err.log; then
+                return 0
+              fi
+              echo "push falhou (tentativa $attempt), rebase + retry..."
+              git fetch origin master
+              git rebase origin/master || { git rebase --abort; return 1; }
+              sleep $(( attempt * 5 ))
+            done
+            cat /tmp/push_err.log
+            return 1
+          }
+
           solved=0
           failed=0
           for f in "${picked[@]}"; do
@@ -104,13 +121,9 @@ jobs:
             fi
             rm -f "$stdout_file"
             git rm -q "$f"
+            git add queue/done/
+            git commit -q -m "solve ${id} (shard ${shard_index}/${shard_count})"
+            push_with_retry || echo "AVISO: push de ${id} falhou apos retries — segue pro proximo"
           done
 
           echo "solved=$solved failed=$failed"
-          git add queue/done/
-          if ! git diff --cached --quiet; then
-            git commit -m "Solve batch: ${solved} resolvidos, ${failed} falharam (shard ${shard_index}/${shard_count})"
-            git push origin HEAD
-          else
-            echo "Nada pra commitar (fila vazia pra este shard)."
-          fi
