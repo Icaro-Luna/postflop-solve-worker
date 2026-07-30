@@ -96,20 +96,10 @@ jobs:
             set -e
 
             if [ $rc -ne 0 ] || [ ! -s "$stdout_file" ]; then
-              ID="$id" RC="$rc" python3 -c "
-import json, os
-json.dump(
-    {'id': os.environ['ID'], 'error': f'solve failed or timed out (rc={os.environ[\"RC\"]})'},
-    open('$out_file', 'w'),
-)
-"
+              ID="$id" RC="$rc" OUT_FILE="$out_file" python3 -c "import json, os; json.dump({'id': os.environ['ID'], 'error': 'solve failed or timed out (rc=' + os.environ['RC'] + ')'}, open(os.environ['OUT_FILE'], 'w'))"
               failed=$((failed+1))
             else
-              ID="$id" STDOUT_FILE="$stdout_file" python3 -c "
-import json, os
-raw = json.load(open(os.environ['STDOUT_FILE']))
-json.dump({'id': os.environ['ID'], 'raw_output': raw}, open('$out_file', 'w'))
-"
+              ID="$id" STDOUT_FILE="$stdout_file" OUT_FILE="$out_file" python3 -c "import json, os; raw = json.load(open(os.environ['STDOUT_FILE'])); json.dump({'id': os.environ['ID'], 'raw_output': raw}, open(os.environ['OUT_FILE'], 'w'))"
               solved=$((solved+1))
             fi
             rm -f "$stdout_file"
