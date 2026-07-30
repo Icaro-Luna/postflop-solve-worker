@@ -113,7 +113,18 @@ jobs:
 
           solved=0
           failed=0
+          skipped_dup=0
           for f in "${picked[@]}"; do
+            # Outra geracao de shards (self-chaining sobreposto) pode ja ter
+            # reivindicado este arquivo entre a listagem inicial e agora (os
+            # rebases dos retries de push acima trazem commits de OUTROS
+            # shards). Ver o mesmo arquivo em duas geracoes concorrentes eh
+            # esperado (particionamento por hash so eh disjunto DENTRO de
+            # uma leva) - pular graciosamente em vez de crashar o job.
+            if [ ! -f "$f" ]; then
+              skipped_dup=$((skipped_dup+1))
+              continue
+            fi
             id=$(basename "$f" .json)
             out_file="queue/done/${id}.json"
             stdout_file=$(mktemp)
@@ -138,7 +149,7 @@ jobs:
             push_with_retry || echo "AVISO: push de ${id} falhou apos retries — segue pro proximo"
           done
 
-          echo "solved=$solved failed=$failed"
+          echo "solved=$solved failed=$failed skipped_dup=$skipped_dup"
 
       - name: Re-checar fila e manter shards ocupados (self-chaining)
         # if: always() -> mesmo se este shard falhou no meio (crash, timeout),
