@@ -28,8 +28,11 @@ jobs:
           GH_TOKEN: ${{ secrets.DATA_REPO_TOKEN }}
           DATA_REPO: ${{ inputs.data_repo || 'Icaro-Luna/rta' }}
         run: |
-          count=$(gh api "repos/${DATA_REPO}/contents/queue/pending" --paginate --jq 'length' 2>/dev/null | \
-            awk '{s+=$1} END {print s+0}')
+          # git/trees (recursive) não tem o teto de 1000 itens que a API de
+          # contents/{path} tem — necessário pra fila deste tamanho.
+          count=$(gh api "repos/${DATA_REPO}/git/trees/master?recursive=true" --paginate \
+            --jq '[.tree[] | select(.path | startswith("queue/pending/")) | select(.path | endswith(".json"))] | length' \
+            2>/dev/null | awk '{s+=$1} END {print s+0}')
           echo "count=$count" >> "$GITHUB_OUTPUT"
           echo "Itens pendentes: $count"
 
