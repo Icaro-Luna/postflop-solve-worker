@@ -1,0 +1,126 @@
+name: Solve batch
+
+on:
+  workflow_dispatch:
+    inputs:
+      data_repo:
+        description: "owner/repo do repositório de dados (privado)"
+        required: true
+        default: "Icaro-Luna/rta"
+      batch_size:
+        description: "quantos itens de queue/pending/ este job processa"
+        required: false
+        default: "50"
+      shard_index:
+        description: "índice deste shard (0-based) — pra rodar em paralelo"
+        required: false
+        default: "0"
+      shard_count:
+        description: "total de shards concorrentes"
+        required: false
+        default: "1"
+
+jobs:
+  solve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout worker (este repo)
+        uses: actions/checkout@v4
+
+      - name: Cache cargo/target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo
+            solver_native/postflop_cli/target
+          key: cargo-postflop_cli-${{ hashFiles('solver_native/postflop_cli/Cargo.lock') }}
+
+      - name: Build postflop_cli (release)
+        working-directory: solver_native/postflop_cli
+        run: cargo build --release --locked
+
+      - name: Checkout data repo (privado)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.data_repo }}
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+          path: data
+
+      - name: Configurar git no checkout de dados
+        working-directory: data
+        run: |
+          git config user.name "postflop-solve-worker"
+          git config user.email "actions@users.noreply.github.com"
+
+      - name: Selecionar shard e resolver
+        working-directory: data
+        env:
+          BIN: ${{ github.workspace }}/solver_native/postflop_cli/target/release/postflop_cli
+        run: |
+          set -euo pipefail
+          mkdir -p queue/pending queue/done
+
+          mapfile -t all_files < <(find queue/pending -maxdepth 1 -name '*.json' | sort)
+          total=${#all_files[@]}
+          echo "Itens pendentes no total: $total"
+
+          shard_index=${{ inputs.shard_index }}
+          shard_count=${{ inputs.shard_count }}
+          batch_size=${{ inputs.batch_size }}
+
+          picked=()
+          i=0
+          for f in "${all_files[@]}"; do
+            if [ $(( i % shard_count )) -eq "$shard_index" ]; then
+              picked+=("$f")
+            fi
+            i=$((i+1))
+            if [ "${#picked[@]}" -ge "$batch_size" ]; then
+              break
+            fi
+          done
+          echo "Este shard ($shard_index/$shard_count) vai processar ${#picked[@]} itens"
+
+          solved=0
+          failed=0
+          for f in "${picked[@]}"; do
+            id=$(basename "$f" .json)
+            out_file="queue/done/${id}.json"
+            stdout_file=$(mktemp)
+
+            set +e
+            python3 -c "import json; print(json.dumps(json.load(open('$f'))['payload']))" \
+              | timeout 340 "$BIN" > "$stdout_file"
+            rc=$?
+            set -e
+
+            if [ $rc -ne 0 ] || [ ! -s "$stdout_file" ]; then
+              ID="$id" RC="$rc" python3 -c "
+import json, os
+json.dump(
+    {'id': os.environ['ID'], 'error': f'solve failed or timed out (rc={os.environ[\"RC\"]})'},
+    open('$out_file', 'w'),
+)
+"
+              failed=$((failed+1))
+            else
+              ID="$id" STDOUT_FILE="$stdout_file" python3 -c "
+import json, os
+raw = json.load(open(os.environ['STDOUT_FILE']))
+json.dump({'id': os.environ['ID'], 'raw_output': raw}, open('$out_file', 'w'))
+"
+              solved=$((solved+1))
+            fi
+            rm -f "$stdout_file"
+            git rm -q "$f"
+          done
+
+          echo "solved=$solved failed=$failed"
+          git add queue/done/
+          if ! git diff --cached --quiet; then
+            git commit -m "Solve batch: ${solved} resolvidos, ${failed} falharam (shard ${shard_index}/${shard_count})"
+            git push origin HEAD
+          else
+            echo "Nada pra commitar (fila vazia pra este shard)."
+          fi

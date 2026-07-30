@@ -1,0 +1,24 @@
+[package]
+name = "postflop_cli"
+version = "0.1.0"
+edition = "2021"
+description = "Thin JSON stdin/stdout CLI wrapper around b-inary/postflop-solver."
+
+[[bin]]
+name = "postflop_cli"
+path = "src/main.rs"
+
+[dependencies]
+# postflop-solver is not published on crates.io; pull from git.
+# b-inary/postflop-solver usa bincode 2.0.0-rc.3 internamente (projeto
+# abandonado antes do bincode 2.0 estável, que quebrou BorrowDecode<'de>).
+postflop-solver = { git = "https://github.com/b-inary/postflop-solver", branch = "main" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
