@@ -10,9 +10,11 @@ on:
       batch_size:
         default: "60"
   schedule:
-    # A cada 5h — aprox. a duração de um job cheio (timeout 350min), evita
-    # disparar uma onda nova em cima de shards que ainda estão rodando.
-    - cron: "0 */5 * * *"
+    # 2026-07-30: medido na pratica ~1h/job (bem abaixo do teto de 6h — a
+    # maioria dos spots reais converge mais rapido que o pior caso usado na
+    # estimativa original). 20min mantem os workers ociosos ocupados sem
+    # martelar a API; o guard de "shards ja ativos" evita duplicar.
+    - cron: "*/20 * * * *"
 
 permissions:
   actions: write

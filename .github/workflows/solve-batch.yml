@@ -69,13 +69,21 @@ jobs:
           shard_count=${{ inputs.shard_count }}
           batch_size=${{ inputs.batch_size }}
 
+          # Particiona por hash ESTÁVEL do nome do arquivo (não pela posição
+          # na listagem) — cada shard lista queue/pending/ no seu próprio
+          # instante, enquanto OUTROS shards já estão removendo arquivos em
+          # paralelo; a mesma posição de índice aponta pra itens diferentes
+          # em listagens tiradas em momentos diferentes, então "i % N" não
+          # garante partições disjuntas entre shards concorrentes. O nome do
+          # arquivo (sha1 do spot_key) é fixo, então hash(nome) % N é.
           picked=()
-          i=0
           for f in "${all_files[@]}"; do
-            if [ $(( i % shard_count )) -eq "$shard_index" ]; then
+            id=$(basename "$f" .json)
+            # primeiros 8 hex do sha1 (já é um hash) -> inteiro -> mod N
+            h=$((16#${id:0:8}))
+            if [ $(( h % shard_count )) -eq "$shard_index" ]; then
               picked+=("$f")
             fi
-            i=$((i+1))
             if [ "${#picked[@]}" -ge "$batch_size" ]; then
               break
             fi
