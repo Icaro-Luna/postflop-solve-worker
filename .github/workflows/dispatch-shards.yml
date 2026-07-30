@@ -8,7 +8,7 @@ on:
       shard_count:
         default: "10"
       batch_size:
-        default: "80"
+        default: "60"
   schedule:
     # A cada 5h — aprox. a duração de um job cheio (timeout 350min), evita
     # disparar uma onda nova em cima de shards que ainda estão rodando.
@@ -53,7 +53,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SHARD_COUNT: ${{ inputs.shard_count || '10' }}
-          BATCH_SIZE: ${{ inputs.batch_size || '80' }}
+          BATCH_SIZE: ${{ inputs.batch_size || '60' }}
           DATA_REPO: ${{ inputs.data_repo || 'Icaro-Luna/rta' }}
           ALREADY_RUNNING: ${{ steps.running.outputs.running }}
         run: |
