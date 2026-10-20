@@ -166,7 +166,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run dispatch.yml --repo ${{ github.repository }} \
-            -f data_repo="${{ inputs.data_repo }}" \
-            -f shard_count="${{ inputs.shard_count }}" \
-            -f batch_size="${{ inputs.batch_size }}"
+          # Retry: uma falha transitória aqui (422/5xx) mata o encadeamento
+          # inteiro — em 2026-10-20 o passo devolveu HTTP 422 porque o arquivo
+          # do workflow tinha sido renomeado, e a fila ficou 51 min parada com
+          # 3.033 pedidos até alguém disparar à mão.
+          for i in 1 2 3 4 5; do
+            if gh workflow run dispatch.yml --repo ${{ github.repository }} \
+                 -f data_repo="${{ inputs.data_repo }}" \
+                 -f shard_count="${{ inputs.shard_count }}" \
+                 -f batch_size="${{ inputs.batch_size }}"; then
+              echo "Encadeamento OK (tentativa $i)."
+              exit 0
+            fi
+            echo "Falha na tentativa $i; aguardando 20s..."
+            sleep 20
+          done
+          echo "::error::Não foi possível encadear o próximo lote — dispare dispatch.yml manualmente."
+          exit 1
