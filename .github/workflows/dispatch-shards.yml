@@ -38,7 +38,7 @@ jobs:
           # Sem 2>/dev/null de propósito: falha de API tem que aparecer,
           # nunca virar "0 pendentes" silencioso.
           count=$(gh api "repos/${DATA_REPO}/git/trees/master:queue/pending" \
-            --jq '[.tree[] | select(.name | endswith(".json"))] | length')
+            --jq '[.tree[] | ((.path // .name) // "") | select(endswith(".json"))] | length')
           echo "count=$count" >> "$GITHUB_OUTPUT"
           echo "Itens pendentes: $count"
 
