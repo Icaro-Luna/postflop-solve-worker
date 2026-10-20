@@ -153,7 +153,7 @@ jobs:
 
       - name: Re-checar fila e manter shards ocupados (self-chaining)
         # if: always() -> mesmo se este shard falhou no meio (crash, timeout),
-        # o encadeamento continua. Cron do dispatch-shards.yml fica só como
+        # o encadeamento continua. Cron do dispatch.yml fica só como
         # rede de segurança (2026-07-30: cron sozinho atrasou >1h em produção,
         # não confiar nele como mecanismo principal).
         #
@@ -166,7 +166,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run dispatch-shards.yml --repo ${{ github.repository }} \
+          gh workflow run dispatch.yml --repo ${{ github.repository }} \
             -f data_repo="${{ inputs.data_repo }}" \
             -f shard_count="${{ inputs.shard_count }}" \
             -f batch_size="${{ inputs.batch_size }}"
