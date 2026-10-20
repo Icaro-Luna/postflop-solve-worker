@@ -1,0 +1,43 @@
+name: Ping4
+
+on:
+  workflow_dispatch:
+    inputs:
+      data_repo:
+        default: "Icaro-Luna/rta"
+      shard_count:
+        default: "10"
+      batch_size:
+        default: "60"
+  schedule:
+    # 2026-07-30: medido na pratica ~1h/job (bem abaixo do teto de 6h — a
+    # maioria dos spots reais converge mais rapido que o pior caso usado na
+    # estimativa original). 20min mantem os workers ociosos ocupados sem
+    # martelar a API; o guard de "shards ja ativos" evita duplicar.
+    - cron: "*/20 * * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checar quantos itens ainda faltam
+        id: pending
+        env:
+          GH_TOKEN: ${{ secrets.DATA_REPO_TOKEN }}
+          DATA_REPO: ${{ inputs.data_repo || 'Icaro-Luna/rta' }}
+        run: |
+          # A tree RECURSIVA é truncada pelo GitHub (~60k entradas,
+          # "truncated": true). Com o acervo grande, queue/pending/ cai fora
+          # da janela e o count vinha 0 — o dispatch parou em 2026-08-20 com
+          # 3.213 pedidos parados. A tree NÃO-recursiva do diretório não tem
+          # esse teto (medido 2026-10-20: 3213 itens, truncated=false).
+          # Sem 2>/dev/null de propósito: falha de API tem que aparecer,
+          # nunca virar "0 pendentes" silencioso.
+          count=$(gh api "repos/${DATA_REPO}/git/trees/master:queue/pending" \
+            --jq '[.tree[] | select(.name | endswith(".json"))] | length')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Itens pendentes: $count"
