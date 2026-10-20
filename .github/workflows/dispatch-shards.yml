@@ -30,11 +30,15 @@ jobs:
           GH_TOKEN: ${{ secrets.DATA_REPO_TOKEN }}
           DATA_REPO: ${{ inputs.data_repo || 'Icaro-Luna/rta' }}
         run: |
-          # git/trees (recursive) não tem o teto de 1000 itens que a API de
-          # contents/{path} tem — necessário pra fila deste tamanho.
-          count=$(gh api "repos/${DATA_REPO}/git/trees/master?recursive=true" --paginate \
-            --jq '[.tree[] | select(.path | startswith("queue/pending/")) | select(.path | endswith(".json"))] | length' \
-            2>/dev/null | awk '{s+=$1} END {print s+0}')
+          # A tree RECURSIVA é truncada pelo GitHub (~60k entradas,
+          # "truncated": true). Com o acervo grande, queue/pending/ cai fora
+          # da janela e o count vinha 0 — o dispatch parou em 2026-08-20 com
+          # 3.213 pedidos parados. A tree NÃO-recursiva do diretório não tem
+          # esse teto (medido 2026-10-20: 3213 itens, truncated=false).
+          # Sem 2>/dev/null de propósito: falha de API tem que aparecer,
+          # nunca virar "0 pendentes" silencioso.
+          count=$(gh api "repos/${DATA_REPO}/git/trees/master:queue/pending" \
+            --jq '[.tree[] | select(.name | endswith(".json"))] | length')
           echo "count=$count" >> "$GITHUB_OUTPUT"
           echo "Itens pendentes: $count"
 
