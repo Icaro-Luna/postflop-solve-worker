@@ -1,0 +1,41 @@
+name: Cron dispatch
+
+# Só existe para religar o agendamento.
+#
+# Contexto (2026-10-20): o repositório ficou de 2026-07-30 a 2026-10-20 sem
+# commits e o GitHub desabilitou os workflows agendados em 2026-09-28. Depois
+# de reativar com `gh workflow enable` e receber commits novos, o `schedule` do
+# `dispatch.yml` continuou sem criar run nenhum (verificado em 5 slots de 20 min,
+# status do GitHub operacional). A hipótese é que o flag de "desabilitado por
+# inatividade" fica colado no workflow — então este arquivo NOVO, sem histórico,
+# só carrega o cron e chama o dispatch.
+#
+# Se este cron voltar a disparar, o `schedule` do dispatch.yml pode ser removido
+# (ele hoje é redundante e não funciona).
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+
+jobs:
+  kick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar dispatch.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in 1 2 3; do
+            if gh workflow run dispatch.yml --repo "${{ github.repository }}"; then
+              echo "dispatch.yml disparado (tentativa $i)."
+              exit 0
+            fi
+            echo "Falha na tentativa $i; aguardando 20s..."
+            sleep 20
+          done
+          echo "::error::Não foi possível disparar dispatch.yml."
+          exit 1
